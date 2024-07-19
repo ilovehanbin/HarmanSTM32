@@ -21,7 +21,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -41,10 +40,6 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-ADC_HandleTypeDef hadc1;
-
-TIM_HandleTypeDef htim3;
-
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -55,33 +50,29 @@ UART_HandleTypeDef huart2;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int xa[100], ya[100];
-void MakeItem()
+char buf[500];
+char dum;
+int idx = 0;
+int cmdOK = 1;
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	int i;
-	srand(htim3.Instance->CNT);
-	for(i = 0; i < 100; i++)
+	HAL_UART_Transmit(&huart2, &dum, 1, 10);
+	if(dum == '\r')
 	{
-		int v1 = rand();
-		int v2 = rand();
-		//printf("v : %d\r\n", x);
-		//HAL_Delay(100);
-		xa[i] = ((double)v1 / 2147483647.) * 80;
-		ya[i] = ((double)v2 / 2147483647.) * 24;
-		printf("[%d:%d](%d,%d)\r\n", v1, v2, xa[i], ya[i]);
-		//printf("\033[%d;%dHo", xa[i], ya[i]);
+		HAL_UART_Transmit(&huart2, "\n", 1, 10);
+		cmdOK = 1;
 	}
-	printf("\n");
+	else cmdOK = 0;
+	buf[idx++] = dum;
+	buf[idx] = 0; // NULL
+	HAL_UART_Receive_IT(&huart2, &dum, 1);
 }
-
 
 /* USER CODE END 0 */
 
@@ -115,41 +106,28 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  MX_ADC1_Init();
-  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  ProgramStart("ADC Polling");
-  printf("\033[2J\033[?25l\n");
+  ProgramStart("UART RX - Interrupt");
+  Cursor(1);
+  HAL_UART_Receive_IT(&huart2, &dum, 1); // one time interrupt
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int sx = 80, sy = 24; // screen size
-  int cx = 39, cy = 12; // initial position
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_ADC_Start(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 1000);
-	  int v = ((double) HAL_ADC_GetValue(&hadc1) / 1400) - 1;
-	  int x = cx + v;
-	  x = (x> 78) ? 78 : (x < 0) ? 0 : x;
-	  // HAL_ADC_Stop(&hadc1); // Skip
-	  HAL_ADC_Start(&hadc1);
-	  HAL_ADC_PollForConversion(&hadc1, 1000);
-	  v = ((double) HAL_ADC_GetValue(&hadc1) / 1400) - 1;
-	  int y = cy + v;
-	  y = (y > 23) ? 23 : (y < 0) ? 0 : y;
-	  //HAL_ADC_Start(&hadc1);
-	  //HAL_ADC_PollForConversion(&hadc1, 1000);
-	  int z = HAL_GPIO_ReadPin(Z_Axis_GPIO_Port, Z_Axis_Pin);
-	  printf("\033[0;0HADC Value : (%d, %d, %d)\n", x, y, z);
-	  printf("\033[%d;%dH \033[%d;%dH@\033[A\n", cy, cx, y, x);
-	  cx = x; cy = y;
-	  HAL_Delay(100);
+	  if(cmdOK > 0)
+	  {
+		  //while(buf[idx] != 0x0d);
+		  printf("%s\r\n>\033[A\n", buf);
+		  idx = 0;
+		  cmdOK = 0;
+	  }
+	  HAL_Delay(10);
   }
   /* USER CODE END 3 */
 }
@@ -198,113 +176,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC1_Init(void)
-{
-
-  /* USER CODE BEGIN ADC1_Init 0 */
-
-  /* USER CODE END ADC1_Init 0 */
-
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-
-  /* USER CODE END ADC1_Init 1 */
-
-  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
-  */
-  hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = ENABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = ENABLE;
-  hadc1.Init.NbrOfDiscConversion = 1;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 2;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
-  */
-  sConfig.Channel = ADC_CHANNEL_10;
-  sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
-  */
-  sConfig.Channel = ADC_CHANNEL_11;
-  sConfig.Rank = 2;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
-}
-
-/**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM3_Init(void)
-{
-
-  /* USER CODE BEGIN TIM3_Init 0 */
-
-  /* USER CODE END TIM3_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM3_Init 1 */
-
-  /* USER CODE END TIM3_Init 1 */
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM3_Init 2 */
-
-  /* USER CODE END TIM3_Init 2 */
-
 }
 
 /**
@@ -372,12 +243,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Z_Axis_Pin */
-  GPIO_InitStruct.Pin = Z_Axis_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(Z_Axis_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
