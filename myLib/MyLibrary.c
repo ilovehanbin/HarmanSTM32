@@ -12,6 +12,13 @@ extern UART_HandleTypeDef huart2;
 
 myBuf buf;
 
+myCMDSET myCmd[] =      //NULL Pointer = 0x0000 0000 (adress value)
+{
+   {"LED", 2},
+   {"MOTOR", 2},
+   {NULL, 0}
+};
+
 int __io_putchar(int ch)
 {
 	HAL_UART_Transmit(&huart2, &ch, 1, 10);
@@ -71,5 +78,31 @@ void Memdump(int n)
 	  	  }
 	  	  printf("\r\n");
 	  }
+}
+
+int head = 0, tail = 0;
+int GetBuffer(char *b) // b : char array pointer
+{
+	int len = 0;
+	char* s = &buf;
+	tail = MAX_BUF - huart2.hdmarx->Instance->NDTR;
+	if(tail > head)
+	{
+		memcpy(b, s + head, tail - head);
+		len = tail - head;
+	}
+	else if(tail < head)
+	{
+		memcpy(b, s + head, MAX_BUF - head);
+		memcpy(b + MAX_BUF - head, s, tail);
+		len = MAX_BUF + tail - head;
+	}
+	else
+	{
+		len = 0;
+	}
+	*(b + len) = 0;
+	head = tail;
+	return len;
 }
 

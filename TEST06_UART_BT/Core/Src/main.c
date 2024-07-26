@@ -15,7 +15,8 @@
   *
   ******************************************************************************
   */
-#include <Myhead.h>
+#include "Myhead.h"
+#include <stdio.h>
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -41,8 +42,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_usart2_rx;
+UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
 
@@ -51,28 +53,109 @@ DMA_HandleTypeDef hdma_usart2_rx;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_USART6_UART_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-extern myBuf buf;
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 
 }
 
-int n = 1;
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+//extern myBuf buf;
+myBuf *buf1, *buf2;
+extern myCMDSET myCmd[];
+
+char dum1;
+char dum2;
+int idx1 = 0, idx2 = 0;
+int eol = 3;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if(GPIO_Pin == B1_Pin)// n = 1,2,4,8 - Echo mode
+	if(huart == &huart6)
 	{
-		if((n <<= 1) > 8) n = 1;
+		buf1->v0[idx1++] = dum1;
+		HAL_UART_Receive_IT(&huart6, &dum1, 1);
 	}
+	else if(huart == &huart2) // keyboart input by teraterm
+	{
+		if(dum2 == '\r') // [Enter] key
+		{
+			HAL_UART_Transmit(&huart2, "\r\n", 2, 10); // Echo
+			HAL_UART_Transmit(&huart6, buf2, idx2, 100); // redirection to BT
+			switch(eol)
+			{
+			case 1:
+				HAL_UART_Transmit(&huart6, "\r\n", 2, 10);
+				break;
+			case 2:
+				HAL_UART_Transmit(&huart6, "\n", 1, 10);
+				break;
+			case 3:
+				HAL_UART_Transmit(&huart6, "\0", 1, 10);
+				break;
+			}
+			HAL_UART_Transmit(&huart6, "\0", 1, 10);
+			idx2 = 0;
+		}
+		else
+		{
+			HAL_UART_Transmit(&huart2, &dum2, 1, 10); // Echo
+			buf2->v0[idx2++] = dum2;
+			buf2->v0[idx2] = 0; // NULL
+		}
+		HAL_UART_Receive_IT(&huart2, &dum2, 1);
+
+	}
+}
+
+
+int CheckCMD(char *b)
+{
+	for(int i = 0;;i++)
+	{
+		if(strncmp(b, myCmd[i].key, strlen(myCmd[i].key)) == 0)
+		{
+			int n = myCmd[i].op_num;
+			char *c = b;
+			while(*c++) if(*c == ' ') n--;c++;
+			if(n == 0) return 1; else return 0;
+		}
+	}
+	return 0;
+}
+
+int PARSING(char *b, char *p[])
+{
+	if(!CheckCMD(b)) return 0;
+
+	int n = 0;
+	p[n++] = b;
+
+	for(int i = 0; b[i] != 0; i++)
+	{
+		if(b[i] == ' ')
+		{
+			b[i] = 0;
+			p[n++] = b + i + 1;
+		}
+	}
+	return n;
+
+//	while(*b)
+//	{
+//		if(*b == ' ')
+//		{
+//			*b = '\0';
+//			p[n++] = ++b;
+//		}
+//	}
 }
 
 /* USER CODE END 0 */
@@ -85,6 +168,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	myBuf b1, b2;
+	buf1 = &b1, buf2 = &b2;
 
   /* USER CODE END 1 */
 
@@ -106,39 +191,63 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_USART2_UART_Init();
+  MX_USART6_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  ProgramStart("UART - DMA");
-  HAL_UART_Receive_DMA(&huart2, &buf, MAX_BUF);
+  ProgramStart("UART - BLUETOOTH");
+  Cursor(1);
+  printf("Select EOL \r\n(1:CRLF   2:LF   3:NULL)\r\n");
+  setvbuf(stdin, NULL, _IONBF, 0);
+//  scanf("%d", &eol);
+  HAL_UART_Receive_IT(&huart6, &dum1, 1);
+  HAL_UART_Receive_IT(&huart2, &dum2, 1);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  CLS();
-  printf("\033[2;0H<Memory dump mode>\r\n");
-
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if(n == 8)
+	  if(idx1)
 	  {
-		  char arr[100];
-		  if(GetBuffer(arr))
+		  buf1->v0[idx1] = 0;
+		  //char a1[10], a2[5], a3[5];
+		  char * p[5];
+		  int r = PARSING(buf1, p);
+		  if(strncmp(p[0], "LED", 3) == 0)
 		  {
-			  printf("%s\r\n", arr);
+			  int ln, st;
+			  sscanf(p[1], "%d", &ln);
+			  st = (strncmp(p[2], "ON", 2) == 0) ? 1 : (strncmp(p[2], "OFF", 3) == 0) ? 0 : -1;
+			  switch(ln)
+			  {
+			  case 1:
+				  HAL_GPIO_WritePin(L1_GPIO_Port, L1_Pin, st);
+				  break;
+			  case 2:
+				  HAL_GPIO_WritePin(L2_GPIO_Port, L2_Pin, st);
+				  break;
+			  case 3:
+				  HAL_GPIO_WritePin(L3_GPIO_Port, L3_Pin, st);
+				  break;
+			  }
+			  printf("%s %d had controlled to %d\r\n", p[0], ln, st);
+//			  for(int i = 0; i < 20; i++)
+//			  {
+//				  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
+//				  HAL_Delay(500);
+//				  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
+//				  HAL_Delay(500);
+//			  }
 		  }
-		  HAL_Delay(500);
+		  printf("%s\r\n", buf1);
+		  idx1 = 0;
 	  }
-	  else
-	  {
-		  printf("\033[3;0H\n");
-		  Memdump(n);
-		  HAL_Delay(100);
-	  }
+	  HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -190,6 +299,39 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -223,18 +365,35 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
-  * Enable DMA controller clock
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
   */
-static void MX_DMA_Init(void)
+static void MX_USART6_UART_Init(void)
 {
 
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
+  /* USER CODE BEGIN USART6_Init 0 */
 
-  /* DMA interrupt init */
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 9600;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
 
 }
 
@@ -256,6 +415,9 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, L1_Pin|L2_Pin|L3_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
@@ -263,6 +425,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : L1_Pin L2_Pin L3_Pin */
+  GPIO_InitStruct.Pin = L1_Pin|L2_Pin|L3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;

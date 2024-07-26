@@ -10,6 +10,12 @@
 
 #define MAX_BUF 480
 
+typedef struct
+{
+   char key[5];
+   int op_num;
+} myCMDSET;
+
 typedef union
 {
 	char  v0[MAX_BUF];
